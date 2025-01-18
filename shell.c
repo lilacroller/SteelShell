@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 
@@ -30,7 +31,7 @@ int built_ins(char *command, const char *arg) {
 	else if (strcmp(command,"cd")==0) {
 		char new_dir[40];
 		if(arg==NULL)
-			strncpy(new_dir, "home/rishabh", 40);
+			strncpy(new_dir, "/home/rishabh", 40);
 		else {
 			strncpy(new_dir, arg, 40);
 		}
@@ -58,16 +59,47 @@ int built_ins(char *command, const char *arg) {
 	return 0;
 }
 
-char** parse(char *str) {
+
+typedef struct{
+	char **tokens;
+	int size;
+} token_pack;
+
+int exec_user_program(token_pack arg_pack) {
+	char **args= arg_pack.tokens;
+	int n= arg_pack.size;
+
+	if(n>=TOKEN_COUNT)
+		printf("no. of args exceeded\n");
+	
+	args[n]= NULL;
+	pid_t pid;
+	if ((pid= vfork())<0){
+		perror("vfork failed");
+		return -1;
+	}
+	else if (pid==0) {
+		if(execv(args[0], args)==-1)
+			perror("execv failed");
+	}
+
+	wait(NULL);
+	return 0;
+}
+
+token_pack parse(char *str) {
 	char **tokens = (char **)malloc(TOKEN_COUNT*sizeof(char*));
 	tokens[0]= strtok(str, " ");
+
+	int n= 0;
 	for (int i=1;; i++){
 		if(tokens[i-1]==NULL)
 			break;
 		tokens[i] = strtok(NULL, " ");
+		n++;
 	}
-
-	return tokens;
+	token_pack pack={tokens,n};
+	return pack;
 }
 
 
@@ -82,18 +114,26 @@ void repl() {
             			buffer[len - 1] = '\0';
         		}
 
-			char **tokens;
-			tokens = parse(buffer);
-			if (tokens[0]==NULL)
+			char **args;
+			token_pack unpack;
+			unpack = parse(buffer);
+			args= unpack.tokens;
+
+			if (args[0]==NULL)
 				continue;
 
-			if(strcmp(tokens[0],"ls")==0 ||
-			   strcmp(tokens[0],"cd")==0 ||
-			   strcmp(tokens[0],"exit")==0 ||
-			   strcmp(tokens[0],"help")==0) {
-				int val= built_ins(tokens[0], tokens[1]);
+			if(strcmp(args[0],"ls")==0 ||
+			   strcmp(args[0],"cd")==0 ||
+			   strcmp(args[0],"exit")==0 ||
+			   strcmp(args[0],"help")==0) {
+				int val= built_ins(args[0], args[1]);
 				if (val==2)
 					break;
+			}
+			else {
+				int val= exec_user_program(unpack);
+				if(val==-1)
+					printf("failed to execute the program\n");
 			}
 		}
 		else {
